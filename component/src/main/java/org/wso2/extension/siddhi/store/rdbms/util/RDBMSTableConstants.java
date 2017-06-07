@@ -54,6 +54,9 @@ public class RDBMSTableConstants {
     public static final String SQL_IS_NULL = "IS NULL";
     public static final String SQL_NOT_NULL = "NOT NULL";
     public static final String SQL_PRIMARY_KEY_DEF = "PRIMARY KEY";
+    public static final String SQL_COLUMN_NAME = "COLUMN_NAME";
+    public static final String SQL_TYPE_NAME = "TYPE_NAME";
+    public static final String SQL_FILED_LENGTH = "FILED_LENGTH";
     public static final String SQL_WHERE = "WHERE";
     public static final String WHITESPACE = " ";
     public static final String SEPARATOR = ", ";
@@ -64,6 +67,7 @@ public class RDBMSTableConstants {
 
     //Annotation field names
     public static final String ANNOTATION_ELEMENT_URL = "jdbc.url";
+    public static final String ANNOTATION_ELEMENT_DRIVER_CLASS_NAME = "jdbc.driver.name";
     public static final String ANNOTATION_ELEMENT_USERNAME = "username";
     public static final String ANNOTATION_ELEMENT_PASSWORD = "password";
     public static final String ANNOTATION_ELEMENT_TABLE_NAME = "table.name";
@@ -71,18 +75,25 @@ public class RDBMSTableConstants {
     public static final String ANNOTATION_ELEMENT_POOL_PROPERTIES = "pool.properties";
     public static final String ANNOTATION_ELEMENT_JNDI_RESOURCE = "jndi.resource";
 
+    //Hikari Config Names
+    public static final String HIKARI_CONFIG_JDBC_URL = "jdbcUrl";
+    public static final String HIKARI_CONFIG_JDBC_DRIVER_NAME = "driverClassName";
+    public static final String HIKARI_CONFIG_DATASOURCE_USER = "dataSource.user";
+    public static final String HIKARI_CONFIG_DATASOURCE_PASSWORD = "dataSource.password";
+
     //Configurable System Parameters
     public static final String PROPERTY_SEPARATOR = ".";
     public static final String MIN_VERSION = "minVersion";
     public static final String MAX_VERSION = "maxVersion";
     public static final String TABLE_CHECK_QUERY = "tableCheckQuery";
-    public static final String TABLE_CREATE_QUERY = "tableCreateQuery ";
-    public static final String INDEX_CREATE_QUERY = "indexCreateQuery ";
-    public static final String RECORD_INSERT_QUERY = "recordInsertQuery ";
-    public static final String RECORD_UPDATE_QUERY = "recordUpdateQuery ";
-    public static final String RECORD_SELECT_QUERY = "recordSelectQuery ";
-    public static final String RECORD_EXISTS_QUERY = "recordExistsQuery ";
-    public static final String RECORD_DELETE_QUERY = "recordDeleteQuery ";
+    public static final String TABLE_CREATE_QUERY = "tableCreateQuery";
+    public static final String INDEX_CREATE_QUERY = "indexCreateQuery";
+    public static final String RECORD_INSERT_QUERY = "recordInsertQuery";
+    public static final String RECORD_UPDATE_QUERY = "recordUpdateQuery";
+    public static final String RECORD_SELECT_QUERY = "recordSelectQuery";
+    public static final String RECORD_EXISTS_QUERY = "recordExistsQuery";
+    public static final String RECORD_DELETE_QUERY = "recordDeleteQuery";
+    public static final String INFORMATION_SCHEMA_QUERY = "informationSchema";
     public static final String STRING_SIZE = "stringSize ";
     public static final String TYPE_MAPPING = "typeMapping";
     public static final String BINARY_TYPE = "binaryType";

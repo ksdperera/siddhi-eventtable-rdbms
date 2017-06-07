@@ -781,8 +781,8 @@ public class DefineRDBMSTableTestCase {
                 "@Store(type=\"rdbms\", jdbc.url=\"" + url + "\", jdbc.driver.name=\"" + driverClassName + "\", " +
                 "username=\"root\", password=\"root\",field.length=\"symbol:100\"," +
                 "pool.properties=\"driverClassName:org.h2.Driver\",table.name=\"StockTable\")\n" +
-                //"@PrimaryKey(\"symbol\")" +
-                //"@Index(\"volume\")" +
+                "@PrimaryKey(\"symbol\")" +
+                "@Index(\"volume\")" +
                 "define table StockTable2 (symbol string, price float, volume long); ";
 
         String query = "" +

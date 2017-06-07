@@ -46,9 +46,9 @@ import org.wso2.siddhi.query.api.util.AnnotationHelper;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +57,7 @@ import javax.naming.InitialContext;
 import javax.naming.NamingException;
 import javax.sql.DataSource;
 
+import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.ANNOTATION_ELEMENT_DRIVER_CLASS_NAME;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.ANNOTATION_ELEMENT_FIELD_LENGTHS;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.ANNOTATION_ELEMENT_JNDI_RESOURCE;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.ANNOTATION_ELEMENT_PASSWORD;
@@ -71,7 +72,12 @@ import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.CLO
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.DOUBLE_TYPE;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.EQUALS;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.FLOAT_TYPE;
+import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.HIKARI_CONFIG_DATASOURCE_PASSWORD;
+import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.HIKARI_CONFIG_DATASOURCE_USER;
+import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.HIKARI_CONFIG_JDBC_DRIVER_NAME;
+import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.HIKARI_CONFIG_JDBC_URL;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.INDEX_CREATE_QUERY;
+import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.INFORMATION_SCHEMA_QUERY;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.INTEGER_TYPE;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.LONG_TYPE;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.OPEN_PARENTHESIS;
@@ -89,8 +95,11 @@ import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.REC
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.RECORD_SELECT_QUERY;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.RECORD_UPDATE_QUERY;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.SEPARATOR;
+import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.SQL_COLUMN_NAME;
+import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.SQL_FILED_LENGTH;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.SQL_NOT_NULL;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.SQL_PRIMARY_KEY_DEF;
+import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.SQL_TYPE_NAME;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.STRING_SIZE;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.STRING_TYPE;
 import static org.wso2.extension.siddhi.store.rdbms.util.RDBMSTableConstants.TABLE_CHECK_QUERY;
@@ -274,6 +283,7 @@ public class RDBMSEventTable extends AbstractRecordTable {
     private String tableName;
     private List<Attribute> attributes;
     private ConfigReader configReader;
+    private Map<String, InformationSchema> informationSchemaMap = new HashMap<>();
 
     @Override
     protected void init(TableDefinition tableDefinition, ConfigReader configReader) {
@@ -312,25 +322,49 @@ public class RDBMSEventTable extends AbstractRecordTable {
             throw new RDBMSTableException("Failed to initialize DB Configuration entry for table '" + this.tableName
                     + "': " + e.getMessage(), e);
         }
+        resolveInformationSchema(storeAnnotation);
         if (!this.tableExists()) {
             this.createTable(storeAnnotation, primaryKeys, indices);
-            this.validateExistingTable(storeAnnotation, primaryKeys, indices);
         } else {
-            this.validateExistingTable(storeAnnotation, primaryKeys, indices);
+            this.validateExistingTable();
+            if (null != primaryKeys || null != indices) {
+                log.warn("A compatible table " + this.tableName + " found in the datasource, existing primary keys " +
+                        "and indices will be use.");
+            }
         }
     }
 
-    //todo : incomplete
-    private void validateExistingTable(Annotation storeAnnotation, Annotation primaryKeys, Annotation indices) {
+    //todo : test cases
+    private void validateExistingTable() {
         Connection conn = this.getConnection();
         PreparedStatement stmt = null;
         ResultSet resultSet = null;
+        List<InformationSchema> resultInfoSchemaList = new ArrayList<>();
         try {
-            String query = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '" + this.tableName
-                    .toUpperCase() + "';";
-            stmt = conn.prepareStatement(query);
+            String informationSchemaQuery = configReader.readConfig(
+                    this.queryConfigurationEntry.getDatabaseName() + PROPERTY_SEPARATOR + INFORMATION_SCHEMA_QUERY,
+                    this.queryConfigurationEntry.getInformationSchemaQuery());
+            stmt = conn.prepareStatement(informationSchemaQuery.replace(PLACEHOLDER_TABLE_NAME,
+                    this.tableName.toUpperCase()));
             resultSet = stmt.executeQuery();
-            ResultSetMetaData resultSetMetaData = resultSet.getMetaData();
+            while (resultSet.next()) {
+                resultInfoSchemaList.add(new InformationSchema(resultSet.getString(SQL_COLUMN_NAME),
+                        resultSet.getString(SQL_TYPE_NAME), resultSet.getString(SQL_FILED_LENGTH)));
+            }
+            for (Attribute attribute : this.attributes) {
+                boolean isMatch = false;
+                InformationSchema informationSchema = informationSchemaMap.get(attribute.getName());
+                for (InformationSchema resultInfoSchema : resultInfoSchemaList) {
+                    isMatch = resultInfoSchema.isMatch(informationSchema);
+                    if (isMatch) {
+                        break;
+                    }
+                }
+                if (!(isMatch)) {
+                    throw new RDBMSTableException("Failed to initialize store, column for attribute name " + attribute
+                            .getName() + " not found in the existing table " + this.tableName + ".");
+                }
+            }
         } catch (SQLException e) {
             if (log.isDebugEnabled()) {
                 log.debug("Table '" + this.tableName + "' assumed to not exist since its existence check resulted "
@@ -394,8 +428,7 @@ public class RDBMSEventTable extends AbstractRecordTable {
             RDBMSTableUtils.resolveCondition(stmt, (RDBMSCompiledCondition) compiledCondition,
                     containsConditionParameterMap, 0);
             rs = stmt.executeQuery();
-            //todo rs.next() only?
-            return rs.next() && !rs.isBeforeFirst();
+            return rs.next();
         } catch (SQLException e) {
             throw new RDBMSTableException("Error performing a contains check on table '" + this.tableName
                     + "': " + e.getMessage(), e);
@@ -646,8 +679,7 @@ public class RDBMSEventTable extends AbstractRecordTable {
             }
         } catch (SQLException e) {
             throw new RDBMSTableException("Error performing update/insert operation (update) on table '"
-                    + this.tableName
-                    + "': " + e.getMessage(), e);
+                    + this.tableName + "': " + e.getMessage(), e);
         } finally {
             RDBMSTableUtils.cleanupConnection(null, insertStmt, null);
         }
@@ -737,8 +769,13 @@ public class RDBMSEventTable extends AbstractRecordTable {
         String url = storeAnnotation.getElement(ANNOTATION_ELEMENT_URL);
         String username = storeAnnotation.getElement(ANNOTATION_ELEMENT_USERNAME);
         String password = storeAnnotation.getElement(ANNOTATION_ELEMENT_PASSWORD);
+        String driverClassName = storeAnnotation.getElement(ANNOTATION_ELEMENT_DRIVER_CLASS_NAME);
         if (RDBMSTableUtils.isEmpty(url)) {
             throw new RDBMSTableException("Required parameter '" + ANNOTATION_ELEMENT_URL + "' for DB " +
+                    "connectivity cannot be empty.");
+        }
+        if (RDBMSTableUtils.isEmpty(url)) {
+            throw new RDBMSTableException("Required parameter '" + ANNOTATION_ELEMENT_DRIVER_CLASS_NAME + "' for DB " +
                     "connectivity cannot be empty.");
         }
         if (RDBMSTableUtils.isEmpty(username)) {
@@ -749,9 +786,10 @@ public class RDBMSEventTable extends AbstractRecordTable {
             throw new RDBMSTableException("Required parameter '" + ANNOTATION_ELEMENT_PASSWORD + "' for DB " +
                     "connectivity cannot be empty.");
         }
-        connectionProperties.setProperty("jdbcUrl", url);
-        connectionProperties.setProperty("dataSource.user", username);
-        connectionProperties.setProperty("dataSource.password", password);
+        connectionProperties.setProperty(HIKARI_CONFIG_JDBC_URL, url);
+        connectionProperties.setProperty(HIKARI_CONFIG_DATASOURCE_USER, username);
+        connectionProperties.setProperty(HIKARI_CONFIG_DATASOURCE_PASSWORD, password);
+        connectionProperties.setProperty(HIKARI_CONFIG_JDBC_DRIVER_NAME, driverClassName);
         if (poolPropertyString != null) {
             List<String[]> poolProps = RDBMSTableUtils.processKeyValuePairs(poolPropertyString);
             poolProps.forEach(pair -> connectionProperties.setProperty(pair[0], pair[1]));
@@ -807,7 +845,6 @@ public class RDBMSEventTable extends AbstractRecordTable {
      * @param indices         the DB indices that should be set for the table.
      */
     private void createTable(Annotation storeAnnotation, Annotation primaryKeys, Annotation indices) {
-        RDBMSTypeMapping typeMapping = this.queryConfigurationEntry.getRdbmsTypeMapping();
         StringBuilder builder = new StringBuilder();
         List<Element> primaryKeyList = (primaryKeys == null) ? new ArrayList<>() : primaryKeys.getElements();
         List<Element> indexElementList = (indices == null) ? new ArrayList<>() : indices.getElements();
@@ -823,50 +860,12 @@ public class RDBMSEventTable extends AbstractRecordTable {
         this.validateFieldLengths(fieldLengths);
         this.attributes.forEach(attribute -> {
             builder.append(attribute.getName()).append(WHITESPACE);
-            switch (attribute.getType()) {
-                case BOOL:
-                    builder.append(configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
-                                    PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + BOOLEAN_TYPE,
-                            typeMapping.getBooleanType()));
-                    break;
-                case DOUBLE:
-                    builder.append(configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
-                                    PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + DOUBLE_TYPE,
-                            typeMapping.getDoubleType()));
-                    break;
-                case FLOAT:
-                    builder.append(configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
-                                    PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + FLOAT_TYPE,
-                            typeMapping.getFloatType()));
-                    break;
-                case INT:
-                    builder.append(configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
-                                    PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + INTEGER_TYPE,
-                            typeMapping.getIntegerType()));
-                    break;
-                case LONG:
-                    builder.append(configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
-                                    PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + LONG_TYPE,
-                            typeMapping.getLongType()));
-                    break;
-                case OBJECT:
-                    builder.append(configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
-                                    PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + BINARY_TYPE,
-                            typeMapping.getBinaryType()));
-                    break;
-                case STRING:
-                    builder.append(configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
-                                    PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + STRING_TYPE,
-                            typeMapping.getStringType()));
-                    String stringSize = configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
-                                    PROPERTY_SEPARATOR + STRING_SIZE,
-                            this.queryConfigurationEntry.getStringSize());
-                    if (null != stringSize) {
-                        builder.append(OPEN_PARENTHESIS);
-                        builder.append(fieldLengths.getOrDefault(attribute.getName(), stringSize));
-                        builder.append(CLOSE_PARENTHESIS);
-                    }
-                    break;
+            InformationSchema informationSchema = informationSchemaMap.get(attribute.getName());
+            if (informationSchema.getFiledLength() != null) {
+                builder.append(informationSchema.getFieldType() + OPEN_PARENTHESIS +
+                        informationSchema.getFiledLength() + CLOSE_PARENTHESIS);
+            } else {
+                builder.append(informationSchema.getFieldType());
             }
             if (this.queryConfigurationEntry.isKeyExplicitNotNull()) {
                 builder.append(WHITESPACE).append(SQL_NOT_NULL);
@@ -891,6 +890,62 @@ public class RDBMSEventTable extends AbstractRecordTable {
         } catch (SQLException e) {
             throw new RDBMSTableException("Unable to initialize table '" + this.tableName + "': " + e.getMessage(), e);
         }
+    }
+
+    private void resolveInformationSchema(Annotation storeAnnotation) {
+        RDBMSTypeMapping typeMapping = this.queryConfigurationEntry.getRdbmsTypeMapping();
+        Map<String, String> fieldLengths = RDBMSTableUtils.processFieldLengths(storeAnnotation.getElement(
+                ANNOTATION_ELEMENT_FIELD_LENGTHS));
+        this.validateFieldLengths(fieldLengths);
+        this.attributes.forEach(attribute -> {
+            String fieldType = null;
+            String fieldLength = null;
+            switch (attribute.getType()) {
+                case BOOL:
+                    fieldType = configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
+                                    PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + BOOLEAN_TYPE,
+                            typeMapping.getBooleanType());
+                    break;
+                case DOUBLE:
+                    fieldType = configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
+                                    PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + DOUBLE_TYPE, typeMapping
+                                    .getDoubleType());
+                    break;
+                case FLOAT:
+                    fieldType = configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
+                            PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + FLOAT_TYPE, typeMapping
+                            .getFloatType());
+                    break;
+                case INT:
+                    fieldType = configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
+                            PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + INTEGER_TYPE, typeMapping
+                            .getIntegerType());
+                    break;
+                case LONG:
+                    fieldType = configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
+                            PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + LONG_TYPE, typeMapping
+                            .getLongType());
+                    break;
+                case OBJECT:
+                    fieldType = configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
+                            PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + BINARY_TYPE, typeMapping
+                            .getBinaryType());
+                    break;
+                case STRING:
+                    String stringSize = configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
+                                    PROPERTY_SEPARATOR + STRING_SIZE,
+                            this.queryConfigurationEntry.getStringSize());
+                    fieldType = configReader.readConfig(this.queryConfigurationEntry.getDatabaseName() +
+                            PROPERTY_SEPARATOR + TYPE_MAPPING + PROPERTY_SEPARATOR + STRING_TYPE, typeMapping
+                            .getStringType());
+                    if (null != stringSize) {
+                        fieldLength = fieldLengths.getOrDefault(attribute.getName(), stringSize);
+                    }
+                    break;
+            }
+            this.informationSchemaMap.put(attribute.getName(), new InformationSchema(attribute.getName(), fieldType,
+                    fieldLength));
+        });
     }
 
     /**
@@ -1033,6 +1088,41 @@ public class RDBMSEventTable extends AbstractRecordTable {
         } catch (SQLException e) {
             throw new RDBMSTableException("Dropping event since value for attribute name " + attribute.getName() +
                     "cannot be set: " + e.getMessage(), e);
+        }
+    }
+
+    private class InformationSchema {
+        private String columnName;
+        private String filedLength;
+        private String fieldType;
+
+        public InformationSchema(String columnName, String fieldType, String filedLength) {
+            this.columnName = columnName != null ? columnName : "";
+            this.fieldType = fieldType != null ? fieldType : "";
+            this.filedLength = filedLength; // filed length can be null.
+        }
+
+        public String getColumnName() {
+            return columnName;
+        }
+
+        public String getFiledLength() {
+            return filedLength;
+        }
+
+        public String getFieldType() {
+            return fieldType;
+        }
+
+        public boolean isMatch(InformationSchema informationSchema) {
+            if (null != informationSchema.getFiledLength()) {
+                return (informationSchema.getColumnName().equalsIgnoreCase(columnName) &&
+                        informationSchema.getFieldType().equalsIgnoreCase(fieldType) &&
+                        informationSchema.getFiledLength().equalsIgnoreCase(filedLength));
+            } else{
+                return (informationSchema.getColumnName().equalsIgnoreCase(columnName) &&
+                        informationSchema.getFieldType().equalsIgnoreCase(fieldType));
+            }
         }
     }
 }

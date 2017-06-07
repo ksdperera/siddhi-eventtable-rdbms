@@ -40,6 +40,7 @@ public class RDBMSQueryConfigurationEntry {
     private String recordInsertQuery;
     private String recordUpdateQuery;
     private String recordDeleteQuery;
+    private String informationSchemaQuery;
     private boolean keyExplicitNotNull = false;
     private String stringSize;
     private RDBMSTypeMapping rdbmsTypeMapping;
@@ -197,4 +198,12 @@ public class RDBMSQueryConfigurationEntry {
         this.batchSize = batchSize;
     }
 
+    @XmlElement(name = "informationSchema")
+    public String getInformationSchemaQuery() {
+        return informationSchemaQuery;
+    }
+
+    public void setInformationSchemaQuery(String informationSchemaQuery) {
+        this.informationSchemaQuery = informationSchemaQuery;
+    }
 }
