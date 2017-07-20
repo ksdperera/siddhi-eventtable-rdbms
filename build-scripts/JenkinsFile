@@ -16,9 +16,9 @@ node("${nodeLabel}") {
                       passwordVariable: 'GIT_PASSWORD']]) {
                 checkout([
                         $class                           : 'GitSCM',
-                        branches                         : [[name: '*/master']],
+                        branches                         : [[name: '*/db2testing']],
                         doGenerateSubmoduleConfigurations: false,
-                        extensions                       : [[$class: 'LocalBranch', localBranch: 'master'],
+                        extensions                       : [[$class: 'LocalBranch', localBranch: 'db2testing'],
                                                             [$class: 'RelativeTargetDirectory', relativeTargetDir: repositoryName]],
                         submoduleCfg                     : [],
                         userRemoteConfigs                :
