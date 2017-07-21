@@ -99,10 +99,20 @@
             <scope>test</scope>
             <version>4.19.26</version>
         </dependency>
+        <dependency>
+            <groupId>org.jacoco</groupId>
+            <artifactId>org.jacoco.agent</artifactId>
+            <classifier>runtime</classifier>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+            </plugin>
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-bundle-plugin</artifactId>
@@ -666,15 +676,11 @@
                                             <shell>su - db2inst1</shell>
                                             <shell>db2start</shell>
                                         </cmd>
-                                        <log>
-                                            <enabled>true</enabled>
-                                            <color>green</color>
-                                        </log>
                                         <ports>
                                             <port>${das-db2.port}:50000</port>
                                         </ports>
                                         <wait>
-                                            <log>SQL1063N  DB2START processing was successful.</log>
+                                            <log>SQL1063N DB2START processing was successful.</log>
                                             <time>10000</time>
                                         </wait>
                                     </run>
